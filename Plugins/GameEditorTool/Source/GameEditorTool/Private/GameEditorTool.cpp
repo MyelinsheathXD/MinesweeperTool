@@ -53,6 +53,8 @@ void FGameEditorToolModule::StartupModule()
 	// Initialize default values
 	MinesweeperWidth = 10;
 	MinesweeperHeight = 10;
+	
+
 }
 
 void FGameEditorToolModule::ShutdownModule()
@@ -137,7 +139,11 @@ TSharedRef<SDockTab> FGameEditorToolModule::OnSpawnMinesweeperTab(const FSpawnTa
 					.MinValue(1)
 					.MaxValue(100)
 					.Value(MinesweeperWidth)
-					.OnValueChanged_Lambda([this](int32 NewValue) { MinesweeperWidth = NewValue; })
+					.OnValueChanged_Lambda([this](int32 NewValue) 
+					{ 
+						MinesweeperWidth = NewValue; 
+						RefreshMinesweeperDisplay();
+					})
 				]
 			]
 			+ SVerticalBox::Slot()
@@ -162,7 +168,11 @@ TSharedRef<SDockTab> FGameEditorToolModule::OnSpawnMinesweeperTab(const FSpawnTa
 					.MinValue(1)
 					.MaxValue(100)
 					.Value(MinesweeperHeight)
-					.OnValueChanged_Lambda([this](int32 NewValue) { MinesweeperHeight = NewValue; })
+					.OnValueChanged_Lambda([this](int32 NewValue) 
+					{ 
+						MinesweeperHeight = NewValue; 
+						RefreshMinesweeperDisplay();
+					})
 				]
 			]
 			+ SVerticalBox::Slot()
@@ -175,9 +185,24 @@ TSharedRef<SDockTab> FGameEditorToolModule::OnSpawnMinesweeperTab(const FSpawnTa
 				.VAlign(VAlign_Center)
 				.Padding(5)
 				[
-					SNew(STextBlock)
-					.Text(FText::Format(LOCTEXT("CurrentValues", "Current: {0}x{1}"), FText::AsNumber(MinesweeperWidth), FText::AsNumber(MinesweeperHeight)))
+					SAssignNew(CurrentValuesTextBlock, STextBlock)
+					.Text(FText::Format(LOCTEXT("CurrentValues", "Current: {0}x{1} = {2}"), 
+						FText::AsNumber(MinesweeperWidth), 
+						FText::AsNumber(MinesweeperHeight),
+						FText::AsNumber(MinesweeperWidth * MinesweeperHeight)))
 				]
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(10)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("RefreshButton", "Refresh Display"))
+				.OnClicked_Lambda([this]() -> FReply
+				{
+					RefreshMinesweeperDisplay();
+					return FReply::Handled();
+				})
 			]
 		];
 }
@@ -233,8 +258,8 @@ void FGameEditorToolModule::RegisterMenus()
 	{
 		UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar");
 		{
-			FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("Settings");
-			{/*
+			/*FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("Settings");
+			{
 				FToolMenuEntry& Entry = Section.AddEntry(
 					FToolMenuEntry::InitToolBarButton(
 						"OpenMinesweeperTool",
@@ -246,9 +271,22 @@ void FGameEditorToolModule::RegisterMenus()
 							FGlobalTabmanager::Get()->TryInvokeTab(MinesweeperTabName);
 						}))
 					)
-				);*/
-			}
+				);
+			}*/
 		}
+	}
+}
+
+void FGameEditorToolModule::RefreshMinesweeperDisplay()
+{
+	if (CurrentValuesTextBlock.IsValid())
+	{
+		CurrentValuesTextBlock->SetText(
+			FText::Format(LOCTEXT("CurrentValues", "Current: {0}x{1} = {2}"), 
+				FText::AsNumber(MinesweeperWidth), 
+				FText::AsNumber(MinesweeperHeight),
+				FText::AsNumber(MinesweeperWidth * MinesweeperHeight))
+		);
 	}
 }
 
