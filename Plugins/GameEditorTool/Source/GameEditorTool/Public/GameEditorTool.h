@@ -23,7 +23,12 @@ private:
 	void RegisterMenus();
 
 	TSharedRef<class SDockTab> OnSpawnPluginTab(const class FSpawnTabArgs& SpawnTabArgs);
+	TSharedRef<class SDockTab> OnSpawnMinesweeperTab(const class FSpawnTabArgs& SpawnTabArgs);
 
 private:
 	TSharedPtr<class FUICommandList> PluginCommands;
+	
+	// Minesweeper dimensions
+	int32 MinesweeperWidth;
+	int32 MinesweeperHeight;
 };
