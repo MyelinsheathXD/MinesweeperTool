@@ -11,10 +11,12 @@
 /*#include "Widgets/Layout/SVerticalBox.h"
 #include "Widgets/Layout/SHorizontalBox.h"*/
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SEditableTextBox.h"
 #include "ToolMenus.h"
 #include "Styling/CoreStyle.h"
 #include "Input/Reply.h"
 #include "Framework/Commands/UIAction.h"
+#include "Math/UnrealMathUtility.h"
 
 static const FName GameEditorToolTabName("GameEditorTool");
 
@@ -204,6 +206,24 @@ TSharedRef<SDockTab> FGameEditorToolModule::OnSpawnMinesweeperTab(const FSpawnTa
 					return FReply::Handled();
 				})
 			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(10)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("GenerateButton", "Generate Minesweeper"))
+				.OnClicked_Lambda([this]() -> FReply
+				{
+					GenerateMinesweeperGame();
+					return FReply::Handled();
+				})
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(10)
+			[
+				SAssignNew(GameGridContainer, SVerticalBox)
+			]
 		];
 }
 
@@ -258,9 +278,9 @@ void FGameEditorToolModule::RegisterMenus()
 	{
 		UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar");
 		{
-			/*FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("Settings");
+			FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("Settings");
 			{
-				FToolMenuEntry& Entry = Section.AddEntry(
+				/*FToolMenuEntry& Entry = Section.AddEntry(
 					FToolMenuEntry::InitToolBarButton(
 						"OpenMinesweeperTool",
 						LOCTEXT("OpenMinesweeperTool", "Minesweeper Tool"),
@@ -271,8 +291,8 @@ void FGameEditorToolModule::RegisterMenus()
 							FGlobalTabmanager::Get()->TryInvokeTab(MinesweeperTabName);
 						}))
 					)
-				);
-			}*/
+				);*/
+			}
 		}
 	}
 }
@@ -287,6 +307,288 @@ void FGameEditorToolModule::RefreshMinesweeperDisplay()
 				FText::AsNumber(MinesweeperHeight),
 				FText::AsNumber(MinesweeperWidth * MinesweeperHeight))
 		);
+	}
+}
+
+void FGameEditorToolModule::GenerateMinesweeperGame()
+{
+	// Calculate number of mines (about 15% of total cells)
+	TotalMines = FMath::Max(1, FMath::RoundToInt((MinesweeperWidth * MinesweeperHeight) * 0.15f));
+	
+	// Initialize game grid
+	GameGrid.SetNum(MinesweeperHeight);
+	for (int32 Row = 0; Row < MinesweeperHeight; ++Row)
+	{
+		GameGrid[Row].SetNum(MinesweeperWidth);
+		for (int32 Col = 0; Col < MinesweeperWidth; ++Col)
+		{
+			GameGrid[Row][Col] = FMinesweeperCell();
+		}
+	}
+	
+	// Place mines randomly
+	int32 MinesPlaced = 0;
+	while (MinesPlaced < TotalMines)
+	{
+		int32 Row = FMath::RandRange(0, MinesweeperHeight - 1);
+		int32 Col = FMath::RandRange(0, MinesweeperWidth - 1);
+		
+		if (!GameGrid[Row][Col].bIsMine)
+		{
+			GameGrid[Row][Col].bIsMine = true;
+			MinesPlaced++;
+		}
+	}
+	
+	// Calculate adjacent mine counts
+	for (int32 Row = 0; Row < MinesweeperHeight; ++Row)
+	{
+		for (int32 Col = 0; Col < MinesweeperWidth; ++Col)
+		{
+			if (!GameGrid[Row][Col].bIsMine)
+			{
+				int32 AdjacentMines = 0;
+				for (int32 dRow = -1; dRow <= 1; ++dRow)
+				{
+					for (int32 dCol = -1; dCol <= 1; ++dCol)
+					{
+						int32 CheckRow = Row + dRow;
+						int32 CheckCol = Col + dCol;
+						if (CheckRow >= 0 && CheckRow < MinesweeperHeight && 
+							CheckCol >= 0 && CheckCol < MinesweeperWidth)
+						{
+							if (GameGrid[CheckRow][CheckCol].bIsMine)
+							{
+								AdjacentMines++;
+							}
+						}
+					}
+				}
+				GameGrid[Row][Col].AdjacentMines = AdjacentMines;
+			}
+		}
+	}
+	
+	// Reset game state
+	bGameGenerated = true;
+	bGameOver = false;
+	bGameWon = false;
+	RevealedCells = 0;
+	
+	// Refresh the game display
+	if (GameGridContainer.IsValid())
+	{
+		//RefreshGameDisplay();
+	}
+}
+
+void FGameEditorToolModule::OnCellClicked(int32 Row, int32 Col)
+{
+	if (!bGameGenerated || bGameOver || GameGrid[Row][Col].bIsFlagged)
+		return;
+	
+	if (GameGrid[Row][Col].bIsMine)
+	{
+		// Game over - reveal all mines
+		bGameOver = true;
+		bGameWon = false;
+		for (int32 r = 0; r < MinesweeperHeight; ++r)
+		{
+			for (int32 c = 0; c < MinesweeperWidth; ++c)
+			{
+				if (GameGrid[r][c].bIsMine)
+				{
+					GameGrid[r][c].bIsRevealed = true;
+				}
+			}
+		}
+	}
+	else
+	{
+		// Reveal the cell
+		RevealCell(Row, Col);
+		
+		// Check if game is won
+		if (IsGameWon())
+		{
+			bGameOver = true;
+			bGameWon = true;
+		}
+	}
+	
+	// Refresh the game display
+	if (GameGridContainer.IsValid())
+	{
+		RefreshGameDisplay();
+	}
+}
+
+void FGameEditorToolModule::OnCellRightClicked(int32 Row, int32 Col)
+{
+	if (!bGameGenerated || bGameOver || GameGrid[Row][Col].bIsRevealed)
+		return;
+	
+	GameGrid[Row][Col].bIsFlagged = !GameGrid[Row][Col].bIsFlagged;
+	
+	// Refresh the game display
+	if (GameGridContainer.IsValid())
+	{
+		RefreshGameDisplay();
+	}
+}
+
+void FGameEditorToolModule::RevealCell(int32 Row, int32 Col)
+{
+	if (Row < 0 || Row >= MinesweeperHeight || Col < 0 || Col >= MinesweeperWidth)
+		return;
+	
+	if (GameGrid[Row][Col].bIsRevealed || GameGrid[Row][Col].bIsFlagged)
+		return;
+	
+	GameGrid[Row][Col].bIsRevealed = true;
+	RevealedCells++;
+	
+	// If no adjacent mines, reveal neighbors
+	if (GameGrid[Row][Col].AdjacentMines == 0)
+	{
+		for (int32 dRow = -1; dRow <= 1; ++dRow)
+		{
+			for (int32 dCol = -1; dCol <= 1; ++dCol)
+			{
+				RevealCell(Row + dRow, Col + dCol);
+			}
+		}
+	}
+}
+
+bool FGameEditorToolModule::IsGameWon() const
+{
+	return RevealedCells == (MinesweeperWidth * MinesweeperHeight - TotalMines);
+}
+
+bool FGameEditorToolModule::IsGameLost() const
+{
+	return bGameOver && !bGameWon;
+}
+
+void FGameEditorToolModule::RefreshGameDisplay()
+{
+	if (!GameGridContainer.IsValid())
+		return;
+	
+	// Clear existing game grid
+	GameGridContainer->ClearChildren();
+	
+	// Add game status
+	GameGridContainer->AddSlot()
+		.AutoHeight()
+		.Padding(5)
+		[
+			SNew(STextBlock)
+			.Text_Lambda([this]() -> FText
+			{
+				if (!bGameGenerated)
+					return LOCTEXT("NoGame", "No game generated yet");
+				
+				if (bGameOver)
+				{
+					if (bGameWon)
+						return LOCTEXT("GameWon", "Congratulations! You won!");
+					else
+						return LOCTEXT("GameLost", "Game Over! You hit a mine!");
+				}
+				
+				return FText::Format(LOCTEXT("GameStatus", "Mines: {0} | Revealed: {1}/{2}"), 
+					FText::AsNumber(TotalMines),
+					FText::AsNumber(RevealedCells),
+					FText::AsNumber(MinesweeperWidth * MinesweeperHeight - TotalMines));
+			})
+		];
+	
+	// Add game grid
+	for (int32 Row = 0; Row < MinesweeperHeight; ++Row)
+	{
+		TSharedRef<SHorizontalBox> RowBox = SNew(SHorizontalBox);
+		
+		for (int32 Col = 0; Col < MinesweeperWidth; ++Col)
+		{
+			const FMinesweeperCell& Cell = GameGrid[Row][Col];
+			
+			FText ButtonText;
+			FLinearColor ButtonColor = FLinearColor::White;
+			
+			if (Cell.bIsFlagged)
+			{
+				ButtonText = LOCTEXT("Flag", "🚩");
+				ButtonColor = FLinearColor::Red;
+			}
+			else if (Cell.bIsRevealed)
+			{
+				if (Cell.bIsMine)
+				{
+					ButtonText = LOCTEXT("Mine", "💣");
+					ButtonColor = FLinearColor::Red;
+				}
+				else if (Cell.AdjacentMines > 0)
+				{
+					ButtonText = FText::AsNumber(Cell.AdjacentMines);
+					// Different colors for different numbers
+					switch (Cell.AdjacentMines)
+					{
+					case 1: ButtonColor = FLinearColor::Blue; break;
+					case 2: ButtonColor = FLinearColor::Green; break;
+					case 3: ButtonColor = FLinearColor::Red; break;
+					case 4: ButtonColor = FLinearColor::Red; break;
+					case 5: ButtonColor = FLinearColor::Red; break;
+					case 6: ButtonColor = FLinearColor::Red; break;
+					case 7: ButtonColor = FLinearColor::Black; break;
+					case 8: ButtonColor = FLinearColor::Gray; break;
+					default: ButtonColor = FLinearColor::Black; break;
+					}
+				}
+				else
+				{
+					ButtonText = LOCTEXT("Empty", "");
+					ButtonColor = FLinearColor::Gray;
+				}
+			}
+			else
+			{
+				ButtonText = LOCTEXT("Hidden", "");
+				ButtonColor = FLinearColor::Gray;
+			}
+			
+			/*RowBox->AddSlot()
+				.AutoWidth()
+				.Padding(1)
+				[
+					SNew(SButton)
+					.Text(ButtonText)
+					.ButtonColorAndOpacity(ButtonColor)
+					.OnClicked_Lambda([this, Row, Col]() -> FReply
+					{
+						OnCellClicked(Row, Col);
+						return FReply::Handled();
+					})
+					.OnClicked_Lambda([this, Row, Col](const FGeometry&, const FPointerEvent&) -> FReply
+					{
+						OnCellRightClicked(Row, Col);
+						return FReply::Handled();
+					})
+					.ContentPadding(FMargin(5))
+					//.MinDesiredWidth(30)
+					//.MinDesiredHeight(30)
+				];*/
+
+			
+		}
+		
+		GameGridContainer->AddSlot()
+			.AutoHeight()
+			.Padding(1)
+			[
+				RowBox
+			];
 	}
 }
 
